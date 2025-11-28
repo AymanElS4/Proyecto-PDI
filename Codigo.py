@@ -5,28 +5,28 @@ import os
 import argparse
 from pathlib import Path
 from typing import Optional
-from skimage.feature import hog, local_binary_pattern
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input as preprocess_mobilenet
 
-# --- 1. CONFIGURACIÓN INICIAL ---
-# Dimensiones estandarizadas para el preprocesamiento (Módulo 1)
-TARGET_SIZE = (640, 640)
-CATEGORIES = ['paisaje', 'retrato', 'evento', 'documento'] # Ejemplo de categorías
+# Librerías para características de textura y forma
+from skimage.feature import hog, local_binary_pattern, graycomatrix, graycoprops
 
-# Inicializar el modelo pre-entrenado para la extracción de Deep Features (Módulo 2)
-# Usaremos MobileNetV2, ligero y rápido. Excluimos la capa de clasificación (include_top=False).
-DEEP_FEAT_DIM = 1280  # Dimensión esperada para MobileNetV2 (pooling='avg')
+# Librerías de Deep Learning Cambiado a ResNet50
+from tensorflow.keras.applications.resnet50 import ResNet50
+from tensorflow.keras.applications.resnet50 import preprocess_input as preprocess_resnet
+
+# CONFIGURACIÓN INICIAL
+
+# Según Avance #2 - Módulo 1: "redimensionamiento... se planean 640x640 píxeles"
+TARGET_SIZE = (640, 640) 
+
+# Inicializar modelo pre-entrenado (Módulo 2)
+# El PDF menciona: "Se obtendrán características claves utilizando... ResNet"
+DEEP_FEAT_DIM = 2048  # ResNet50 con pooling='avg' devuelve un vector de 2048
 try:
-    BASE_MODEL = MobileNetV2(weights='imagenet', include_top=False, pooling='avg', input_shape=(TARGET_SIZE[0], TARGET_SIZE[1], 3))
-    # Intentar ajustar la dimensión real del embedding si está disponible
-    try:
-        DEEP_FEAT_DIM = int(BASE_MODEL.output_shape[-1])
-    except Exception:
-        pass
-    print("Modelo MobileNetV2 cargado para Deep Features. Dimensión:", DEEP_FEAT_DIM)
+    # include_top=False elimina la capa de clasificación final, nos quedamos con los "features"
+    BASE_MODEL = ResNet50(weights='imagenet', include_top=False, pooling='avg', input_shape=(TARGET_SIZE[0], TARGET_SIZE[1], 3))
+    print(f"Modelo ResNet50 cargado. Dimensión del vector: {DEEP_FEAT_DIM}")
 except Exception as e:
-    print("ADVERTENCIA: No se pudo cargar MobileNetV2. Las Deep Features se reemplazarán por ceros. Motivo:", e)
+    print(f"ADVERTENCIA: No se pudo cargar ResNet50. Error: {e}")
     BASE_MODEL = None
 
 # ----------------------------------------------------------------------
@@ -34,40 +34,34 @@ except Exception as e:
 # ----------------------------------------------------------------------
 
 def preprocess_image(image_path: Path) -> Optional[np.ndarray]:
-    """
-    Módulo 1: Carga y preprocesamiento de una imagen.
-    - Lectura (validación de integridad).
-    - Conversión a RGB (si no lo es).
-    - Redimensionamiento (TARGET_SIZE).
-    - Normalización (a rango 0-1).
-    - Aplicación de filtro de suavizado (bilateral para mantener bordes).
-    """
+    
+    #Cumple con Módulo 1:
+    # Lectura y verificación[cite: 16].
+    # Conversión a RGB y Redimensionamiento (640x640)[cite: 17].
+    # Filtro de suavizado (Bilateral)[cite: 18].
+    
     try:
-        # 1. Lectura de la imagen (cv2.IMREAD_COLOR para 3 canales)
+        # 1. Lectura
         img = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-        
         if img is None:
-            print(f"Error: No se pudo leer la imagen {image_path.name}. Saltando.")
             return None
         
-        # 2. Conversión a RGB (OpenCV lee en BGR por defecto)
+        # 2. Estandarización: RGB
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
-        # 3. Redimensionamiento
+        # 3. Redimensionamiento a 640x640
         img_resized = cv2.resize(img, TARGET_SIZE, interpolation=cv2.INTER_AREA)
         
-        # 4. Normalización de valores de intensidad (a rango 0-1)
+        # 4. Normalización (0-1)
         img_normalized = img_resized.astype("float32") / 255.0
         
-        # 5. Aplicación de filtro de suavizado (Filtro Bilateral para reducción de ruido)
-        # Los parámetros (d, sigmaColor, sigmaSpace) deben ajustarse si es necesario.
-        img_denoised = cv2.bilateralFilter(
-            (img_normalized * 255).astype(np.uint8),  # Bilateral requiere uint8
-            d=9, sigmaColor=75, sigmaSpace=75
-        )
-        img_denoised = img_denoised.astype("float32") / 255.0 # Volver a normalizar
+        # 5. Filtro de suavizado (Bilateral para reducir ruido preservando bordes)
+        # Se convierte temporalmente a uint8 porque bilateralFilter lo requiere/funciona mejor
+        img_uint8 = (img_normalized * 255).astype(np.uint8)
+        img_denoised = cv2.bilateralFilter(img_uint8, d=9, sigmaColor=75, sigmaSpace=75)
         
-        return img_denoised
+        # Retornar normalizado float32
+        return img_denoised.astype("float32") / 255.0
 
     except Exception as e:
         print(f"Error procesando {image_path.name}: {e}")
@@ -78,51 +72,47 @@ def preprocess_image(image_path: Path) -> Optional[np.ndarray]:
 # ----------------------------------------------------------------------
 
 def extract_color_features(img: np.ndarray) -> np.ndarray:
-    """
-    Módulo 2.1: Extracción de características de Color (Histogramas RGB y HSV).
-    """
-    # Asegurarse de trabajar sobre uint8 en rango 0-255 para OpenCV
+
+    #Módulo 2: "Se calcularán histogramas de color en los espacios RGB y HSV".
+    
     uint8_img = (img * 255).astype(np.uint8)
 
-    # 1. Histograma RGB (concatenado para los 3 canales)
+    # Histograma RGB
     hist_rgb = []
-    for i in range(3):  # 0: R, 1: G, 2: B
+    for i in range(3):
         hist = cv2.calcHist([uint8_img], [i], None, [256], [0, 256])
         cv2.normalize(hist, hist)
         hist_rgb.extend(hist.flatten())
 
-    # Convertir a HSV para histograma complementario de Color
+    # Histograma HSV
     img_hsv = cv2.cvtColor(uint8_img, cv2.COLOR_RGB2HSV)
     hist_hsv = []
-    # Solo se extraen H (Hue/Tono) y S (Saturation/Saturación) para el color.
-    for i in range(2): # 0: H, 1: S (V/Valor se omite a menudo)
-        if i == 0:
-            hist = cv2.calcHist([img_hsv], [i], None, [180], [0, 180])
-        else:
-            hist = cv2.calcHist([img_hsv], [i], None, [256], [0, 256])
+    # Usamos Hue (Tono) y Saturation (Saturación)
+    for i in range(2): 
+        bins = 180 if i == 0 else 256
+        range_vals = [0, 180] if i == 0 else [0, 256]
+        hist = cv2.calcHist([img_hsv], [i], None, [bins], range_vals)
         cv2.normalize(hist, hist)
         hist_hsv.extend(hist.flatten())
 
     return np.array(hist_rgb + hist_hsv)
 
 def extract_edge_and_shape_features(img: np.ndarray) -> np.ndarray:
-    """
-    Módulo 2.2: Extracción de características de Bordes y Forma (Canny y HOG).
-    """
-    # Trabajar sobre uint8
+
+    #Módulo 2: "se extraerán bordes mediante el operador de Canny y descriptores de forma con HOG".
+    
     uint8_img = (img * 255).astype(np.uint8)
     img_gray = cv2.cvtColor(uint8_img, cv2.COLOR_RGB2GRAY)
 
-    # 1. Detección de Bordes Canny (Medida de la densidad/complejidad de bordes)
+    # Canny (Densidad de bordes)
     edges = cv2.Canny(img_gray, 100, 200)
-    canny_feature = np.sum(edges) / (TARGET_SIZE[0] * TARGET_SIZE[1]) # Densidad de bordes
+    canny_feature = np.sum(edges) / (TARGET_SIZE[0] * TARGET_SIZE[1])
 
-    # 2. Histograma de Gradientes Orientados (HOG)
-    # Evitar parámetros que dependen de versiones de skimage
+    # HOG (Histogram of Oriented Gradients)
     hog_features = hog(
         img_gray,
         orientations=9,
-        pixels_per_cell=(16, 16),
+        pixels_per_cell=(32, 32), # Ajustado para 640x640 para no generar un vector gigante
         cells_per_block=(2, 2),
         transform_sqrt=True,
         visualize=False
@@ -131,158 +121,114 @@ def extract_edge_and_shape_features(img: np.ndarray) -> np.ndarray:
     return np.concatenate(([canny_feature], hog_features))
 
 def extract_texture_features(img: np.ndarray) -> np.ndarray:
-    """
-    Módulo 2.3: Extracción de características de Textura (LBP).
-    """
-    # Trabajar sobre uint8 y escala de grises
+    
+    #Módulo 2: "se caracterizarán las texturas a través de LBP y GLCM".
+    
     uint8_img = (img * 255).astype(np.uint8)
     img_gray = cv2.cvtColor(uint8_img, cv2.COLOR_RGB2GRAY)
 
-    # Local Binary Pattern (LBP)
-    # P: número de puntos vecinos (8), R: radio (1)
-    P = 8
-    lbp = local_binary_pattern(img_gray, P=P, R=1, method='uniform')
+    # 1. LBP (Local Binary Patterns)
+    P, R = 8, 1
+    lbp = local_binary_pattern(img_gray, P=P, R=R, method='uniform')
+    (hist_lbp, _) = np.histogram(lbp.ravel(), bins=P+2, range=(0, P+2))
+    hist_lbp = hist_lbp.astype("float")
+    hist_lbp /= (hist_lbp.sum() + 1e-7)
 
-    # Calcular el histograma de LBP (uniform LBP produce P+2 posibles valores)
-    bins = P + 2
-    (hist, _) = np.histogram(lbp.ravel(), bins=bins, range=(0, bins))
+    # 2. GLCM (Gray Level Co-occurrence Matrix) - AGREGADO NUEVO
+    # Calculamos contraste y energía como descriptores clave
+    # 'levels' debe coincidir con el rango de la imagen (0-255)
+    glcm = graycomatrix(img_gray, distances=[1], angles=[0], levels=256, symmetric=True, normed=True)
+    contrast = graycoprops(glcm, 'contrast')[0, 0]
+    energy = graycoprops(glcm, 'energy')[0, 0]
+    homogeneity = graycoprops(glcm, 'homogeneity')[0, 0]
+    correlation = graycoprops(glcm, 'correlation')[0, 0]
 
-    # Normalizar el histograma
-    hist = hist.astype("float")
-    hist /= (hist.sum() + 1e-7)
+    glcm_features = np.array([contrast, energy, homogeneity, correlation])
 
-    return hist
+    return np.concatenate([hist_lbp, glcm_features])
 
 def extract_deep_features(img: np.ndarray) -> np.ndarray:
-    """
-    Módulo 2.4: Extracción de Features Profundas (Embeddings de CNN).
-    NOTA: Esto requiere el modelo MobileNetV2 cargado.
-    """
-    # Siempre devolver un vector de longitud fija: DEEP_FEAT_DIM
+    
+    #Módulo 2: "Se obtendrán características claves utilizando redes... como ResNet".
+    
     if BASE_MODEL is None:
         return np.zeros(DEEP_FEAT_DIM, dtype=np.float32)
 
     try:
-        # La imagen ya está en TARGET_SIZE y float32.
-        # Expandir la dimensión para el batch (1, H, W, 3)
-        img_batch = np.expand_dims(img * 255.0, axis=0).astype(np.float32) # Keras espera 0-255
+        # Preparamos la imagen para Keras (batch size 1)
+        img_batch = np.expand_dims(img * 255.0, axis=0) # ResNet espera valores tipo imagen sin normalizar a 0-1 previo al preprocess
+        
+        # Preprocesamiento específico de ResNet (Zero-center, etc.)
+        img_processed = preprocess_resnet(img_batch)
 
-        # Preprocesamiento específico del modelo (ej. centrado, escalado)
-        img_processed = preprocess_mobilenet(img_batch)
-
-        # Extracción del embedding
+        # Predicción (Extracción del vector)
         features = BASE_MODEL.predict(img_processed, verbose=0)
-        feats = features.flatten()
-
-        # Ajustar tamaño (padding o recorte) para garantizar longitud fija
-        if feats.size < DEEP_FEAT_DIM:
-            feats = np.pad(feats, (0, DEEP_FEAT_DIM - feats.size), mode='constant')
-        elif feats.size > DEEP_FEAT_DIM:
-            feats = feats[:DEEP_FEAT_DIM]
-
-        return feats
+        return features.flatten() # Debe ser longitud 2048
+        
     except Exception as e:
         print(f"Error extrayendo Deep Features: {e}")
         return np.zeros(DEEP_FEAT_DIM, dtype=np.float32)
 
 
-# --- FUNCIÓN PRINCIPAL DE EJECUCIÓN ---
+# --- FUNCIÓN PRINCIPAL DE EJECUCIÓN (ORQUESTADOR) ---
 
-
-def run_sprints(input_dir: str, output_dir: str):
-    """
-    Ejecuta las fases 1 y 2 del proyecto.
-    """
+def run_pipeline(input_dir: str, output_dir: str):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
-    
-    # Crear carpetas de salida si no existen
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # Buscar imágenes con extensiones comunes (recursivo)
-    image_paths = [p for p in input_path.rglob('*') if p.suffix.lower() in ('.jpg', '.jpeg', '.png')]
+    # Extensiones válidas mencionadas en PDF (JPG, PNG, BMP) [cite: 39]
+    valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp')
+    image_paths = [p for p in input_path.rglob('*') if p.suffix.lower() in valid_extensions]
+    
     if not image_paths:
-        print(f"Error: No se encontraron imágenes en la carpeta de entrada: {input_dir}")
+        print(f"No se encontraron imágenes en {input_dir}")
         return
 
-    all_features = []
-    
-    # --- FASE 1 Y 2 ITERACIÓN ---
-    for i, image_path in enumerate(image_paths):
-        print(f"[{i+1}/{len(image_paths)}] Procesando: {image_path.name}")
-        
-        # === FASE 1: PREPROCESAMIENTO ===
-        processed_img = preprocess_image(image_path)
-        
-        if processed_img is None:
-            continue
-            
-        # Opcional: Guardar la imagen preprocesada (Entregable Módulo 1)
-        # Asegurarse de convertir de float32 a uint8 y de RGB a BGR para cv2.imwrite
-        # output_filename = output_path / f"pre_{image_path.stem}.png"
-        # cv2.imwrite(str(output_filename), cv2.cvtColor((processed_img * 255).astype(np.uint8), cv2.COLOR_RGB2BGR))
-        
-        # === FASE 2: EXTRACCIÓN DE CARACTERÍSTICAS ===
-        
-        # 1. Color
-        color_feats = extract_color_features(processed_img)
-        # 2. Borde/Forma
-        edge_shape_feats = extract_edge_and_shape_features(processed_img)
-        # 3. Textura
-        texture_feats = extract_texture_features(processed_img)
-        # 4. Profundas (si el modelo cargó o rellenadas con ceros)
-        deep_feats = extract_deep_features(processed_img)
+    all_data = []
 
-        # Concatenar todos los vectores de características
-        # Se asegura que si deep_feats es None o vacío, la concatenación sigue funcionando
-        all_vector = np.concatenate([
-            color_feats,
-            edge_shape_feats,
-            texture_feats,
-            deep_feats
-        ])
-
-        # Crear un diccionario para la fila del DataFrame
-        feature_dict = {
-            'filename': image_path.name,
-            'path': str(image_path),
-            'feature_vector': all_vector
-        }
-        all_features.append(feature_dict)
+    print(f"Iniciando procesamiento de {len(image_paths)} imágenes...")
+    
+    for i, img_path in enumerate(image_paths):
+        print(f"[{i+1}/{len(image_paths)}] Procesando: {img_path.name}")
         
-    # --- FIN DE FASE 2: GENERACIÓN DEL ENTREGABLE ---
-    
-    # Creamos un DataFrame para estructurar los resultados (Entregable Módulo 2)
-    df_features = pd.DataFrame(all_features)
-    
-    # Asegurarse que todos los vectores tengan la misma longitud (padding si es necesario)
-    vectors = list(df_features['feature_vector'].values)
-    lengths = [v.size for v in vectors]
-    max_len = max(lengths) if lengths else 0
-    normalized = [np.pad(v, (0, max_len - v.size), mode='constant') if v.size < max_len else v[:max_len] for v in vectors]
-    feature_matrix = np.vstack(normalized)
-    feature_names = [f'feat_{i+1}' for i in range(feature_matrix.shape[1])]
-    
-    df_final = pd.DataFrame(feature_matrix, columns=feature_names)
-    df_final.insert(0, 'filename', df_features['filename'])
-    
-    # Guardar el DataFrame
-    output_csv = output_path / "extracted_features.csv"
-    df_final.to_csv(output_csv, index=False)
-    
-    print("\n--- FASES 1 Y 2 COMPLETADAS ---")
-    print(f"Imágenes procesadas: {len(df_final)}")
-    print(f"Dimensión del vector de características (por imagen): {feature_matrix.shape[1]}")
-    print(f"ENTREGABLE FASE 2 guardado en: {output_csv}")
+        # --- FASE 1: Preprocesamiento ---
+        processed_img = preprocess_image(img_path)
+        if processed_img is None: continue
 
+        # --- FASE 2: Extracción ---
+        # 1. Vectores clásicos
+        feat_color = extract_color_features(processed_img)
+        feat_edge = extract_edge_and_shape_features(processed_img)
+        feat_texture = extract_texture_features(processed_img) # Ahora incluye GLCM
+        
+        # 2. Vectores profundos (Deep Learning)
+        feat_deep = extract_deep_features(processed_img)
+
+        # Concatenación final
+        full_vector = np.concatenate([feat_color, feat_edge, feat_texture, feat_deep])
+        
+        all_data.append(full_vector)
+    
+    # Guardar resultados
+    if all_data:
+        # Crear DataFrame
+        df = pd.DataFrame(all_data)
+        # Añadir nombres de archivo como primera columna
+        df.insert(0, 'filename', [p.name for p in image_paths])
+        
+        csv_path = output_path / "features_dataset.csv"
+        df.to_csv(csv_path, index=False)
+        print("\n--- PROCESO FINALIZADO ---")
+        print(f"Archivo de características generado en: {csv_path}")
+        print(f"Dimensiones del vector por imagen: {df.shape[1] - 1}")
+    else:
+        print("No se generaron datos.")
 
 if __name__ == '__main__':
-    # Configuración de los argumentos de línea de comandos
-    parser = argparse.ArgumentParser(description="Script para Preprocesamiento y Extracción de Características de Imágenes (Fases 1 y 2 del Proyecto).")
-    parser.add_argument('--input', type=str, required=True, help="Ruta a la carpeta que contiene las imágenes de entrada.")
-    parser.add_argument('--output', type=str, default='./output_features', help="Ruta a la carpeta donde se guardarán las características extraídas.")
-    
+    parser = argparse.ArgumentParser(description="PDI Proyecto: Fases 1 y 2")
+    parser.add_argument('--input', type=str, required=True, help="Carpeta de imágenes")
+    parser.add_argument('--output', type=str, default='./output', help="Carpeta de salida")
     args = parser.parse_args()
     
-    # Ejemplo de uso: python nombre_del_script.py --input C:/Users/Usuario/Fotos --output C:/Proyecto/Data
-    run_sprints(args.input, args.output)
+    run_pipeline(args.input, args.output)
