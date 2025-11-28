@@ -15,11 +15,11 @@ from tensorflow.keras.applications.resnet50 import preprocess_input as preproces
 
 # CONFIGURACIÓN INICIAL
 
-# Según Avance #2 - Módulo 1: "redimensionamiento... se planean 640x640 píxeles"
+# Según Avance #2 - Módulo 1: "redimensionamiento se planean 640x640 píxeles"
 TARGET_SIZE = (640, 640) 
 
 # Inicializar modelo pre-entrenado (Módulo 2)
-# El PDF menciona: "Se obtendrán características claves utilizando... ResNet"
+# "Se obtendrán características claves utilizando ResNet"
 DEEP_FEAT_DIM = 2048  # ResNet50 con pooling='avg' devuelve un vector de 2048
 try:
     # include_top=False elimina la capa de clasificación final, nos quedamos con los "features"
@@ -38,7 +38,7 @@ def preprocess_image(image_path: Path) -> Optional[np.ndarray]:
     #Cumple con Módulo 1:
     # Lectura y verificación[cite: 16].
     # Conversión a RGB y Redimensionamiento (640x640)[cite: 17].
-    # Filtro de suavizado (Bilateral)[cite: 18].
+    # Filtro de suavizado (Bilateral)[cite: 18]
     
     try:
         # 1. Lectura
@@ -149,7 +149,7 @@ def extract_texture_features(img: np.ndarray) -> np.ndarray:
 
 def extract_deep_features(img: np.ndarray) -> np.ndarray:
     
-    #Módulo 2: "Se obtendrán características claves utilizando redes... como ResNet".
+    #Módulo 2: "Se obtendrán características claves utilizando redes como ResNet".
     
     if BASE_MODEL is None:
         return np.zeros(DEEP_FEAT_DIM, dtype=np.float32)
