@@ -12,6 +12,13 @@ from skimage.feature import hog, local_binary_pattern, graycomatrix, graycoprops
 # Librerías de Deep Learning Cambiado a ResNet50
 from tensorflow.keras.applications.resnet50 import ResNet50
 from tensorflow.keras.applications.resnet50 import preprocess_input as preprocess_resnet
+from skimage.feature import hog, local_binary_pattern, graycomatrix, graycoprops
+from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input as preprocess_resnet
+
+# --- NUEVAS LIBRERÍAS FASE 3 ---
+from ultralytics import YOLO  # Para YOLOv8
+from sklearn.svm import SVC   # Sugerido en Avance #2 para clasificación final
+import joblib
 
 # CONFIGURACIÓN INICIAL
 
@@ -170,8 +177,99 @@ def extract_deep_features(img: np.ndarray) -> np.ndarray:
         return np.zeros(DEEP_FEAT_DIM, dtype=np.float32)
 
 
-# --- FUNCIÓN PRINCIPAL DE EJECUCIÓN (ORQUESTADOR) ---
+# --- YOLO ---
+try:
+    YOLO_MODEL = YOLO("yolov8n.pt")
+    print("YOLOv8 cargado correctamente.")
+except Exception as e:
+    print("No se pudo cargar YOLO:", e)
+    YOLO_MODEL = None
 
+def extract_yolo_person_features(img_path: Path) -> np.ndarray:
+    """
+    Usa YOLOv8 para contar personas (Clase 0 en COCO).
+    Retorna un pequeño vector con el conteo y la confianza máxima.
+    """
+    if YOLO_MODEL is None: return np.array([0, 0])
+    
+    # classes=[0] filtra para que YOLO solo busque personas
+    results = YOLO_MODEL.predict(str(img_path), classes=[0], verbose=False)
+    
+    num_persons = len(results[0].boxes)
+    max_conf = 0
+    if num_persons > 0:
+        max_conf = results[0].boxes.conf.cpu().numpy().max()
+    
+    # Retornamos el conteo y la confianza como características
+    return np.array([num_persons, max_conf])
+
+# --- FUNCIÓN PARA DECISIÓN SEMÁNTICA (Módulo 3.3) ---
+def classify_scene_logic(prediction_label, v_yolo):
+    """
+    Aplica las reglas de decisión combinadas mencionadas en tu Avance #2.
+    """
+    num_persons = v_yolo[0]
+    
+    # Regla: "Si se detectan muchos rostros/personas, es Retrato o Fiesta"
+    if num_persons >= 1 and num_persons <= 2:
+        return "Personas/Retrato"
+    elif num_persons > 2:
+        return "Fiestas"
+    
+    return prediction_label # Si no hay personas, confía en el clasificador (Paisajes, Comida, etc.)
+
+# ----------------------------------------------------------------------
+# --- ORQUESTADOR ACTUALIZADO ---
+# ----------------------------------------------------------------------
+
+def run_pipeline(input_dir: str, output_dir: str):
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp')
+    image_paths = [p for p in input_path.rglob('*') if p.suffix.lower() in valid_extensions]
+    
+    all_data = []
+    print(f"Iniciando Fase 3 para {len(image_paths)} imágenes...")
+
+    for img_path in image_paths:
+        processed_img = preprocess_image(img_path)
+        if processed_img is None: continue
+
+        # 1. Características PDI Clásicas (Fase 2)
+        f_color = extract_color_features(processed_img)
+        f_edge = extract_edge_and_shape_features(processed_img)
+        f_texture = extract_texture_features(processed_img)
+        
+        # 2. Características Deep (ResNet50)
+        f_deep = extract_deep_features(processed_img)
+
+        # 3. Características de Objetos (YOLOv8 - SOLO PERSONAS)
+        f_yolo = extract_yolo_person_features(img_path)
+
+        # FUSIÓN DE VECTORES (El "Vector Maestro" para el SVM)
+        full_vector = np.concatenate([f_color, f_edge, f_texture, f_deep, f_yolo])
+        all_data.append(full_vector)
+        print(f"Vector generado para {img_path.name}. Personas detectadas: {int(f_yolo[0])}")
+
+    # Guardar Dataset de Características
+    if all_data:
+        df = pd.DataFrame(all_data)
+        df.insert(0, 'filename', [p.name for p in image_paths])
+        df.to_csv(output_path / "features_dataset_fase3.csv", index=False)
+        print(f"\nProceso completado. Vector de dimensión: {df.shape[1]-1}")
+        print("Siguiente paso: Entrenar el clasificador con este CSV.")
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', type=str, required=True)
+    parser.add_argument('--output', type=str, default='./output')
+    args = parser.parse_args()
+    run_pipeline(args.input, args.output)
+
+# --- FUNCIÓN PRINCIPAL DE EJECUCIÓN (ORQUESTADOR) ---
+"""
 def run_pipeline(input_dir: str, output_dir: str):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
@@ -232,3 +330,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     run_pipeline(args.input, args.output)
+"""
