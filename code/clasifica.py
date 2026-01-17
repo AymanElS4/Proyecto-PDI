@@ -3,11 +3,11 @@ from pathlib import Path
 from ultralytics import YOLO
 import matplotlib.pyplot as plt
 
-MODEL = Path("/models/svm_model.joblib")
-DATA = Path("data/features/features_dataset_fase3_labeled.csv")
-RAW = Path("Proyecto-PDI\datasetres\testi")
-OUT = Path("output")
-WEIGHTS = Path("weights/yolov8n.pt")
+MODEL = Path(r"Proyecto-PDI\models\svm_pipeline.joblib")
+DATA = Path(r"Proyecto-PDI\datasetres\features\features_dataset_fase3_labeled.csv")
+RAW = Path(r"Proyecto-PDI\datasetres\testi")
+OUT = Path(r"Proyecto-PDI\output")
+WEIGHTS = Path(r"Proyecto-PDI\weights\yolov8n.pt")
 
 model = joblib.load(MODEL)
 yolo = YOLO(str(WEIGHTS))
