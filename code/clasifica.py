@@ -1,12 +1,11 @@
-# classify_fase3_4.py
 import pandas as pd, joblib, shutil
 from pathlib import Path
 from ultralytics import YOLO
 import matplotlib.pyplot as plt
 
-MODEL = Path("models/svm_model.joblib")
+MODEL = Path("/models/svm_model.joblib")
 DATA = Path("data/features/features_dataset_fase3_labeled.csv")
-RAW = Path("data/raw")
+RAW = Path("Proyecto-PDI\datasetres\testi")
 OUT = Path("output")
 WEIGHTS = Path("weights/yolov8n.pt")
 

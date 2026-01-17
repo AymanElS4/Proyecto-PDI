@@ -1,4 +1,3 @@
-# pipeline_fase1_2.py
 import pandas as pd
 from pathlib import Path
 import numpy as np
@@ -7,8 +6,8 @@ from utils_features import (
     extract_texture, extract_deep
 )
 
-DATA_DIR = Path("data/raw")
-OUT_CSV = Path("data/features/features_dataset_fase3_labeled.csv")
+DATA_DIR = Path("Proyecto-PDI/datasetres/raw")
+OUT_CSV = Path("Proyecto-PDI/datasetres/features/features_dataset_fase3_labeled.csv")
 OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
 
 def run():
@@ -27,7 +26,7 @@ def run():
                 extract_texture(img),
                 extract_deep(img)
             ])
-            rows.append([img_path.name] + feats.tolist() + [label])
+            rows.append([img_path.name] + feats.tolist() + [label]) #ya se verifico que si está al final
 
     if not rows:
         print("No se encontraron imágenes.")

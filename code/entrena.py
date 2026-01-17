@@ -1,4 +1,3 @@
-# train_phase3.py
 """
 Entrena un clasificador (SVM) usando el CSV de features etiquetado.
 Salida: svm_pipeline.joblib
@@ -49,7 +48,7 @@ def build_and_train(X, y, out_path: Path, do_grid=True):
         model = pipe
 
     ypred = model.predict(X_test)
-    print("=== Classification Report ===")
+    print("Reporte de clasificación:")
     print(classification_report(y_test, ypred))
     print("Confusion matrix:")
     print(confusion_matrix(y_test, ypred))

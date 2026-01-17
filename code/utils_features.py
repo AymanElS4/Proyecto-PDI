@@ -1,4 +1,3 @@
-# utils_features.py
 import cv2, numpy as np
 from skimage.feature import hog, local_binary_pattern, graycomatrix, graycoprops
 from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
