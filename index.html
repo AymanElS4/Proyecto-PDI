@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clasificador de imágenes PDI</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, system-ui, -apple-system, sans-serif;
+        background: #090e1a;
+        color: #eef2ff;
+      }
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 20% 20%, #243b73 0, transparent 35rem),
+          #090e1a;
+      }
+      main {
+        width: min(680px, calc(100% - 32px));
+        padding: 32px;
+        box-sizing: border-box;
+        border: 1px solid #2d3a59;
+        border-radius: 20px;
+        background: rgba(12, 19, 36, 0.92);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+      }
+      h1 { margin-top: 0; }
+      .status {
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: #111d38;
+        border-left: 4px solid #60a5fa;
+        line-height: 1.5;
+      }
+      .classes {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .class {
+        padding: 12px;
+        text-align: center;
+        border-radius: 10px;
+        background: #17223b;
+        border: 1px solid #29375a;
+      }
+      code {
+        color: #93c5fd;
+      }
+      a { color: #93c5fd; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Clasificador de imágenes PDI</h1>
+      <p>
+        Aplicación preparada para desplegarse en Vercel con una interfaz web
+        y API de estado.
+      </p>
+      <div id="status" class="status">Comprobando despliegue…</div>
+      <div class="classes" aria-label="Clases disponibles">
+        <div class="class">Animales</div>
+        <div class="class">Comida</div>
+        <div class="class">Fiestas</div>
+        <div class="class">Paisajes</div>
+        <div class="class">Personas</div>
+      </div>
+      <p>
+        El modelo completo requiere ejecutar <code>git lfs pull</code> antes
+        del despliegue y subir los artefactos reales al repositorio.
+      </p>
+    </main>
+    <script>
+      fetch("/api/status")
+        .then((response) => response.json())
+        .then((data) => {
+          document.getElementById("status").textContent = data.message;
+        })
+        .catch(() => {
+          document.getElementById("status").textContent =
+            "La API no está disponible.";
+        });
+    </script>
+  </body>
+</html>

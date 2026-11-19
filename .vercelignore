@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+**/__pycache__/
+output/
+.git/
+Proyecto-PDI-main/datasetres/raw/
+Proyecto-PDI-main/datasetres/testi/
